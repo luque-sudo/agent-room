@@ -574,6 +574,116 @@ agent-room --service-url ws://your-server.com:9000
 
 ---
 
+### OpenClaw Channel Integration
+
+**Connect AgentRoom to OpenClaw gateway** as a standards-compliant messaging channel for multi-platform communication.
+
+#### What is OpenClaw?
+
+[OpenClaw](https://docs.openclaw.ai) is a multi-channel gateway that connects various messaging platforms (Slack, Discord, Telegram, etc.) with intelligent routing rules and AI agent integration.
+
+#### 🎯 Key Features
+
+- ✅ **Standards-Compliant**: Built with OpenClaw Plugin SDK (TypeScript)
+- ✅ **Bi-directional Messaging**: AgentRoom ↔ OpenClaw ↔ Other platforms
+- ✅ **Message Routing Rules**: Forward, filter, transform messages
+- ✅ **Security Policies**: `open`, `pairing`, `allowlist` modes
+- ✅ **@Mentions Support**: Mention users across platforms
+- ✅ **Auto-reconnect**: Resilient WebSocket connection
+- ✅ **Type Safe**: Full TypeScript support with IntelliSense
+
+#### 🚀 Quick Setup
+
+```bash
+# 1. Build the plugin
+cd openclaw-channel
+npm install
+npm run build
+
+# 2. Link to OpenClaw
+mkdir -p ~/.openclaw/plugins
+ln -s $(pwd) ~/.openclaw/plugins/agentroom
+
+# 3. Configure OpenClaw
+nano ~/.openclaw/config.yaml
+```
+
+**Configuration:**
+
+```yaml
+# Load plugin
+plugins:
+  - id: agentroom
+    path: ~/.openclaw/plugins/agentroom
+    enabled: true
+
+# Configure channel
+channels:
+  agentroom:
+    enabled: true
+    url: 'ws://localhost:9000'
+    botName: 'OpenClaw'
+    autoJoinRooms: ['general', 'random']
+    dmPolicy: 'open'
+
+# Routing rules
+rules:
+  - name: 'agentroom-to-slack'
+    trigger:
+      channel: 'agentroom'
+      room: 'general'
+    actions:
+      - type: 'forward'
+        target: 'slack'
+        channel: '#agentroom'
+```
+
+**Start Services:**
+
+```bash
+# Terminal 1: Start AgentRoom
+npm run agent
+
+# Terminal 2: Start OpenClaw
+openclaw gateway start
+
+# Terminal 3: Test
+openclaw send --channel agentroom --to room:general "Hello!"
+```
+
+#### 📚 Documentation
+
+- **[Quick Start Guide](openclaw-channel/QUICKSTART.md)** - Get running in 5 minutes
+- **[Complete README](openclaw-channel/README.md)** - Full documentation
+- **[Architecture](openclaw-channel/ARCHITECTURE.md)** - Technical details
+- **[Configuration](openclaw-channel/config.example.yaml)** - All options
+- **[Changelog](openclaw-channel/CHANGELOG.md)** - Version history
+
+#### 💡 Use Cases
+
+1. **Multi-Platform Bridge**: Connect AgentRoom to Slack, Discord, Telegram simultaneously
+2. **Notification Hub**: Broadcast AgentRoom announcements to all platforms
+3. **Command Router**: Route commands from any platform to AgentRoom agents
+4. **Analytics**: Collect and analyze messages across all channels
+5. **AI Agent Integration**: Connect AI agents to multiple messaging platforms
+
+#### 🔧 Programmatic Usage
+
+```typescript
+import { AgentRoomClient } from '@litenmcp/openclaw-agentroom-channel';
+
+const client = new AgentRoomClient({
+  url: 'ws://localhost:9000',
+  botName: 'MyBot',
+  onMessage: (msg) => console.log('Received:', msg),
+});
+
+await client.connect();
+client.sendMessage({ room: 'general', text: 'Hello!' });
+```
+
+---
+
 ### Service Messaging
 
 AgentRoom Service is an independently deployable real-time messaging service with room chat and DM capabilities.

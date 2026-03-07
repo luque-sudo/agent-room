@@ -1,8 +1,11 @@
-# 🤖 OpenClaw Bot 接入 AgentRoom 指南
+# 🤖 AgentRoom ↔ OpenClaw 集成指南
 
 ## 📋 目录
 
 - [概述](#概述)
+- [集成方式](#集成方式)
+  - [方式1: AgentRoom 作为 OpenClaw Channel](#方式1-agentroom-作为-openclaw-channel-推荐)
+  - [方式2: OpenClaw Bot 接入 AgentRoom](#方式2-openclaw-bot-接入-agentroom)
 - [快速开始](#快速开始)
 - [核心实现](#核心实现)
 - [高级功能](#高级功能)
@@ -13,7 +16,103 @@
 
 ## 概述
 
-本文档介绍如何将 OpenClaw Bot 接入 AgentRoom 实时消息服务，支持：
+本文档介绍 AgentRoom 与 OpenClaw 的两种集成方式：
+
+### 方式对比
+
+| 特性 | Channel Plugin (推荐) | Bot Integration |
+|------|---------------------|-----------------|
+| **方向** | OpenClaw → AgentRoom | AgentRoom → OpenClaw |
+| **复杂度** | ⭐⭐ 简单 | ⭐⭐⭐ 中等 |
+| **功能** | 完整 OpenClaw 能力 | 自定义 Bot 逻辑 |
+| **维护** | OpenClaw 统一管理 | 独立 Bot 进程 |
+| **适用场景** | 多平台消息网关 | 单一 Bot 接入 |
+
+---
+
+## 集成方式
+
+### 方式1: AgentRoom 作为 OpenClaw Channel (推荐)
+
+将 **AgentRoom** 作为一个 **channel** 接入到 OpenClaw gateway，实现多平台统一管理。
+
+#### ✨ 优势
+
+- ✅ **统一管理**: 通过 OpenClaw 统一配置所有 channels
+- ✅ **消息路由**: 支持灵活的消息转发规则
+- ✅ **多平台桥接**: AgentRoom ↔ Slack ↔ Discord ↔ Telegram
+- ✅ **安全认证**: 支持 `open`/`pairing`/`allowlist` 三种认证策略
+- ✅ **自动重连**: 内置断线重连机制
+- ✅ **监控指标**: Prometheus 指标导出
+
+#### 🚀 快速开始
+
+```bash
+# 1. 安装 AgentRoom Channel Plugin
+cd openclaw-channel
+./install.sh
+
+# 2. 配置 OpenClaw
+# 编辑 ~/.openclaw/config.yaml
+nano ~/.openclaw/config.yaml
+
+# 3. 启动服务
+npm run agent          # 终端1: 启动 AgentRoom
+openclaw gateway start # 终端2: 启动 OpenClaw Gateway
+
+# 4. 测试连接
+node openclaw-channel/test-agentroom-channel.js
+```
+
+#### 📝 配置示例
+
+```yaml
+# ~/.openclaw/config.yaml
+channels:
+  agentroom:
+    enabled: true
+    url: 'ws://localhost:9000'
+    botName: 'OpenClaw'
+    defaultRoom: 'general'
+    autoJoinRooms:
+      - 'general'
+      - 'random'
+      - 'dev'
+    pairingPolicy: 'open'  # open | pairing | allowlist
+
+rules:
+  # AgentRoom → Slack
+  - name: 'agentroom-to-slack'
+    trigger:
+      channel: 'agentroom'
+      room: 'general'
+    actions:
+      - type: 'forward'
+        target: 'slack'
+        channel: '#agentroom'
+  
+  # Slack → AgentRoom
+  - name: 'slack-to-agentroom'
+    trigger:
+      channel: 'slack'
+      channel_name: '#agentroom'
+    actions:
+      - type: 'forward'
+        target: 'agentroom'
+        room: 'general'
+```
+
+#### 📚 完整文档
+
+详见：[openclaw-channel/README.md](../openclaw-channel/README.md)
+
+---
+
+### 方式2: OpenClaw Bot 接入 AgentRoom
+
+在 AgentRoom 中创建一个 OpenClaw Bot，通过 WebSocket 连接实现自定义消息处理逻辑。
+
+#### ✨ 特点
 
 - ✅ 基于规则的智能回复
 - ✅ @提及用户功能
