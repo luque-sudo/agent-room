@@ -1,0 +1,112 @@
+version: '3.9'
+
+# Production stack: PostgreSQL + Redis + all 3 services
+# For local dev without Docker, run: pnpm dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_chat
+      POSTGRES_USER: agent_chat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U agent_chat']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api-server:
+    build:
+      context: .
+      dockerfile: apps/api-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      STORAGE_MODE: postgres
+      PUBSUB_MODE: local
+      DATABASE_URL: postgresql://agent_chat:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/agent_chat
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var required}
+      CORS_ORIGIN: ${CORS_ORIGIN:-true}
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3000/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  ws-server:
+    build:
+      context: .
+      dockerfile: apps/ws-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      STORAGE_MODE: postgres
+      PUBSUB_MODE: redis
+      DATABASE_URL: postgresql://agent_chat:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/agent_chat
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var required}
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3001/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  agent-gateway:
+    build:
+      context: .
+      dockerfile: apps/agent-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      TRANSPORT: http
+      STORAGE_MODE: postgres
+      DATABASE_URL: postgresql://agent_chat:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/agent_chat
+      WS_SERVER_URL: ws://ws-server:3001
+      API_SERVER_URL: http://api-server:3000
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var required}
+    ports:
+      - '3002:3002'
+    depends_on:
+      api-server:
+        condition: service_healthy
+      ws-server:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

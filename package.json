@@ -1,76 +1,28 @@
 {
-  "name": "agent-room",
-  "version": "0.2.3",
-  "description": "AgentRoom — MCP tools for IDE/CLI + deployable real-time messaging service",
+  "name": "agent-chat-workspace",
+  "version": "0.1.0",
+  "description": "Agent Chat Workspace — Professional multi-agent real-time messaging platform",
+  "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "default": "./dist/server.js"
-    },
-    "./service": {
-      "types": "./dist/service/index.d.ts",
-      "default": "./dist/service/index.js"
-    },
-    "./service/protocol": {
-      "types": "./dist/service/protocol.d.ts",
-      "default": "./dist/service/protocol.js"
-    }
-  },
-  "bin": {
-    "agent-room": "dist/index.js",
-    "agent-room-service": "dist/service/index.js",
-    "agent-room-cli": "dist/service/cli.js"
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "prepublishOnly": "npm run build",
-    "service": "tsx src/service/index.ts",
-    "service:start": "node dist/service/index.js",
-    "service:cli": "tsx src/service/cli.ts",
-    "service:test": "tsx src/service/test.ts",
-    "test:echo-server": "tsx src/test/echo-server.ts",
-    "test:send-hello": "tsx src/test/send-hello.ts",
-    "test:reactive-test": "tsx src/test/reactive-test.ts"
+    "dev": "tsx apps/dev-server/src/index.ts",
+    "dev:services": "concurrently --kill-others-on-fail --prefix-colors \"cyan,green,magenta\" --names \"api,ws,gateway\" \"tsx apps/api-server/src/index.ts\" \"tsx apps/ws-server/src/index.ts\" \"TRANSPORT=http tsx apps/agent-gateway/src/index.ts\"",
+    "dev:api": "tsx apps/api-server/src/index.ts",
+    "dev:ws": "tsx apps/ws-server/src/index.ts",
+    "dev:gateway": "tsx apps/agent-gateway/src/index.ts",
+    "setup": "tsx apps/mention-watcher/src/setup-runner.ts",
+    "watch": "tsx apps/mention-watcher/src/index.ts",
+    "build": "pnpm --filter '@agent-chat/*' build && pnpm --filter './apps/*' build",
+    "build:packages": "pnpm --filter '@agent-chat/*' build",
+    "clean": "find . -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null; true"
   },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "websocket",
-    "sse",
-    "stream",
-    "realtime",
-    "chat",
-    "service",
-    "ai-tools"
-  ],
-  "license": "MIT",
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "eventsource": "^4.1.0",
-    "ws": "^8.19.0",
-    "zod": "^4.3.6"
-  },
   "devDependencies": {
-    "@modelcontextprotocol/inspector": "^0.19.0",
-    "@types/node": "^25.2.1",
-    "@types/ws": "^8.18.1",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "concurrently": "^9.0.0"
   }
 }
