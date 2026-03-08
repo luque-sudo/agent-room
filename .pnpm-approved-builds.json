@@ -1,1 +1,1 @@
-{"node-pty":true}
+{"node-pty":true,"@homebridge/node-pty-prebuilt-multiarch":true}
