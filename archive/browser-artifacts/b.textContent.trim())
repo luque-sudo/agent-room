@@ -1,0 +1,11 @@
+{
+  "id": "3d45ce58-08c6-4896-bb8c-33907dfa3595",
+  "ok": false,
+  "error": {
+    "code": "browser_error",
+    "message": "Evaluation error: SyntaxError: Unexpected end of input"
+  },
+  "_meta": {
+    "runtimeId": "02fc42d9-c6f0-47de-90e1-ebd8889d725f"
+  }
+}

@@ -23,8 +23,12 @@ export async function registerHuman(
   });
 
   if (!res.ok) {
-    const err = (await res.json()) as any;
-    throw new Error(err.error ?? 'Registration failed');
+    let errorMsg = `HTTP ${res.status}: ${res.statusText}`;
+    try {
+      const err = await res.json() as { error?: string };
+      if (err.error) errorMsg = err.error;
+    } catch {}
+    throw new Error(errorMsg);
   }
 
   return res.json();
@@ -49,8 +53,12 @@ export async function createAgent(
   });
 
   if (!res.ok) {
-    const err = (await res.json()) as any;
-    throw new Error(err.error ?? 'Agent creation failed');
+    let errorMsg = `HTTP ${res.status}: ${res.statusText}`;
+    try {
+      const err = await res.json() as { error?: string };
+      if (err.error) errorMsg = err.error;
+    } catch {}
+    throw new Error(errorMsg);
   }
 
   return res.json();

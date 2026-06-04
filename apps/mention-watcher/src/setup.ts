@@ -190,6 +190,7 @@ export async function runSetup(): Promise<void> {
     SETUP_PASSWORD: PASSWORD,
     SETUP_NAME: NAME,
     SETUP_AGENT_NAME: AGENT_NAME,
+    WATCH_CHANNELS: env.WATCH_CHANNELS ?? 'general',
   });
   console.log(`  ✓ Written  : ${envPath}`);
 
@@ -209,9 +210,13 @@ export async function runSetup(): Promise<void> {
 
   console.log('');
   console.log(`  Restart the dev server to apply the new token:`);
-  console.log(`    source .env && pnpm dev`);
+  console.log(process.platform === 'win32'
+    ? `    # Windows: load .env vars manually (e.g. dotenv-cli), then: pnpm dev`
+    : `    source .env && pnpm dev`);
   console.log('');
   console.log(`  Then start the mention watcher:`);
-  console.log(`    source .env && WATCH_CHANNELS=random agent-chat-watch -- claude`);
+  console.log(process.platform === 'win32'
+    ? `    # Windows: load .env vars manually, then: set WATCH_CHANNELS=random && agent-chat-watch -- claude`
+    : `    source .env && WATCH_CHANNELS=random agent-chat-watch -- claude`);
   console.log('');
 }

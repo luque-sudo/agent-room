@@ -1,9 +1,10 @@
-import { createHash } from 'node:crypto';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer as createHttpServer } from 'node:http';
 import { z } from 'zod';
+import { WebSocket } from 'ws';
 import { EntityType } from '@agent-chat/types';
 import type { IStorageAdapter } from '@agent-chat/database';
 import { WsBridge } from './ws-bridge.js';
@@ -32,6 +33,9 @@ export async function createAgentGateway(
 
   type MentionWaiter = { resolve: (v: any) => void; channelId?: string };
   const mentionWaiters: MentionWaiter[] = [];
+  type MessageWaiter = { resolve: (v: any) => void; channelId: string };
+  const messageWaiters: MessageWaiter[] = [];
+  const externalConnections = new Map<string, WebSocket>();
   let consecutiveTimeouts = 0;
   const CONTEXT_RESET_THRESHOLD = Number(process.env.MENTION_RESET_THRESHOLD ?? 10);
 
@@ -53,6 +57,16 @@ export async function createAgentGateway(
           const [waiter] = mentionWaiters.splice(idx, 1);
           consecutiveTimeouts = 0;
           waiter.resolve({ mention: true, channelId: msg.channel, ...payload });
+        }
+      }
+    });
+
+    b.onAnyMessage((msg) => {
+      if (msg.type === 'chat') {
+        const idx = messageWaiters.findIndex(w => w.channelId === msg.channel);
+        if (idx >= 0) {
+          const [waiter] = messageWaiters.splice(idx, 1);
+          waiter.resolve({ received: true, channelId: msg.channel, ...(msg.payload as any) });
         }
       }
     });
@@ -254,6 +268,29 @@ export async function createAgentGateway(
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   });
 
+  server.registerTool('wait_for_message', {
+    description: 'Block until any message is received in a specific channel, or until timeout.',
+    inputSchema: z.object({
+      channelId: z.string().describe('Channel ID to wait for a message in'),
+      timeout: z.number().int().min(5).max(120).default(55).describe('Seconds to wait'),
+    }),
+  }, async (params) => {
+    if (!bridge) throw new Error('Not connected.');
+    const p = params as any;
+    const result = await new Promise<any>((resolve) => {
+      const timer = setTimeout(() => {
+        const idx = messageWaiters.findIndex(w => w.channelId === p.channelId);
+        if (idx >= 0) messageWaiters.splice(idx, 1);
+        resolve({ timeout: true, channelId: p.channelId });
+      }, (p.timeout ?? 55) * 1000);
+      messageWaiters.push({
+        resolve: (v) => { clearTimeout(timer); resolve(v); },
+        channelId: p.channelId,
+      });
+    });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  });
+
   server.registerTool('get_unread', {
     description: 'Get messages since a specific timestamp (ISO-8601).',
     inputSchema: GetUnreadSchema,
@@ -266,6 +303,115 @@ export async function createAgentGateway(
       (m: any) => m.createdAt >= since
     );
     return { content: [{ type: 'text', text: JSON.stringify({ messages, since }) }] };
+  });
+
+  // ── Streaming / External Connections ─────────────────────────────────
+
+  server.registerTool('connect_stream', {
+    description: 'Connect to an external WebSocket URL and bridge incoming messages to a channel.',
+    inputSchema: z.object({
+      url: z.string().url().describe('External WebSocket URL to connect to'),
+      channelId: z.string().describe('Channel to forward messages to'),
+      connectionId: z.string().optional().describe('ID for this connection (auto-generated if omitted)'),
+      headers: z.record(z.string()).optional().describe('Optional HTTP headers for the WS handshake'),
+    }),
+  }, async (params) => {
+    if (!bridge) throw new Error('Not connected.');
+    const p = params as any;
+    const connId = (p.connectionId as string | undefined) ?? randomUUID().slice(0, 8);
+
+    const parsedUrl = new URL(p.url as string);
+    if (!['ws:', 'wss:'].includes(parsedUrl.protocol)) {
+      throw new Error(`connect_stream only accepts ws:// or wss:// URLs (got: ${parsedUrl.protocol})`);
+    }
+
+    const extWs = new WebSocket(p.url as string, { headers: (p.headers ?? {}) as Record<string, string> });
+    externalConnections.set(connId, extWs);
+
+    await new Promise<void>((resolve, reject) => {
+      extWs.once('open', resolve);
+      extWs.once('error', (err) => {
+        externalConnections.delete(connId);
+        reject(err);
+      });
+    });
+
+    extWs.on('message', (data) => {
+      const text = (data as Buffer).toString();
+      bridge!.sendChat(p.channelId as string, `[ext:${connId}] ${text}`);
+    });
+
+    extWs.on('close', () => {
+      externalConnections.delete(connId);
+      bridge!.sendChat(p.channelId as string, `[ext:${connId}] Connection closed`);
+    });
+
+    return { content: [{ type: 'text', text: JSON.stringify({ success: true, connectionId: connId, url: p.url, channelId: p.channelId }, null, 2) }] };
+  });
+
+  server.registerTool('disconnect_stream', {
+    description: 'Disconnect a previously established external WebSocket connection.',
+    inputSchema: z.object({
+      connectionId: z.string().describe('Connection ID returned by connect_stream'),
+    }),
+  }, async (params) => {
+    const p = params as any;
+    const ws = externalConnections.get(p.connectionId as string);
+    if (!ws) throw new Error(`No connection with ID: ${p.connectionId}`);
+    ws.close();
+    externalConnections.delete(p.connectionId as string);
+    return { content: [{ type: 'text', text: JSON.stringify({ success: true, connectionId: p.connectionId }, null, 2) }] };
+  });
+
+  // ── Convenience: connect + join in one step ───────────────────────────
+
+  server.registerTool('connect_service', {
+    description: 'Connect to the AgentRoom service and join a channel. Convenience wrapper: verifies auth, joins the specified channel, and returns channel info. Use this before send_message or wait_for_message.',
+    inputSchema: z.object({
+      channelId: z.string().describe('The channel ID or name to join'),
+    }),
+  }, async (params) => {
+    if (!bridge || !bridge.isConnected()) {
+      throw new Error('Not connected. Call authenticate first to establish a connection.');
+    }
+    const { channelId } = params as { channelId: string };
+    const result = await joinChannel(channelId, bridge);
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          success: true,
+          channelId: result.channelId,
+          message: `Connected to channel ${result.channelId}`,
+        }, null, 2),
+      }],
+    };
+  });
+
+  // ── Item F: list_connections tool ────────────────────────────────────
+
+  server.registerTool('list_connections', {
+    description: 'List all active channel connections for this gateway session. Returns channel IDs the gateway has joined, auth state, and WS connection status.',
+    inputSchema: z.object({}),
+  }, async () => {
+    if (!bridge) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ connected: false, note: 'Not authenticated. Call authenticate first.' }, null, 2),
+        }],
+      };
+    }
+    const channels = await bridge.listChannels().catch(() => []);
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          connected: bridge.isConnected(),
+          channels,
+        }, null, 2),
+      }],
+    };
   });
 
   // ── Auth tool (bootstrap) ─────────────────────────────────────────────
@@ -300,6 +446,161 @@ export async function createAgentGateway(
       }],
     };
   });
+
+  // ── MCP Resources ─────────────────────────────────────────────────────
+
+  server.registerResource('connection-status', 'connection://status', {
+    description: 'Current gateway connection state: authenticated entity, WS URL, scopes, external connections',
+    mimeType: 'application/json',
+  }, async () => {
+    return {
+      contents: [{
+        uri: 'connection://status',
+        mimeType: 'application/json',
+        text: JSON.stringify({
+          authenticated: !!callerJwt,
+          entityId: callerEntityId || null,
+          wsServerUrl: wsUrl,
+          scopes: callerScopes,
+          bridgeConnected: bridge?.isConnected() ?? false,
+          externalConnections: Array.from(externalConnections.keys()),
+        }, null, 2),
+      }],
+    };
+  });
+
+  server.registerResource('metrics-snapshot', 'metrics://snapshot', {
+    description: 'Gateway metrics: message waiters, mention waiters, active streams, external connections',
+    mimeType: 'application/json',
+  }, async () => {
+    return {
+      contents: [{
+        uri: 'metrics://snapshot',
+        mimeType: 'application/json',
+        text: JSON.stringify({
+          mentionWaiters: mentionWaiters.length,
+          messageWaiters: messageWaiters.length,
+          activeStreams: activeStreams.size,
+          externalConnections: externalConnections.size,
+          consecutiveTimeouts,
+          latency: bridge ? bridge.getLatencyPercentiles() : { p50: null, p95: null, p99: null, sampleCount: 0 },
+        }, null, 2),
+      }],
+    };
+  });
+
+  // ── Item E: per-channel connection status resource ────────────────────
+
+  server.registerResource(
+    'channel-connection-status',
+    new ResourceTemplate('connection://{channelId}/status', { list: undefined }),
+    {
+      description: 'Connection status for a specific channel. Returns whether the gateway is subscribed to this channel.',
+      mimeType: 'application/json',
+    },
+    async (uri, variables) => {
+      const channelId = variables['channelId'] as string;
+      let subscribed = false;
+      if (bridge) {
+        try {
+          const channels = await bridge.listChannels();
+          subscribed = (channels as any[]).some(
+            (ch) => (typeof ch === 'string' ? ch : ch?.id ?? ch?.channelId) === channelId
+          );
+        } catch {
+          // listChannels failed; fall through with subscribed = false
+        }
+      }
+      return {
+        contents: [{
+          uri: uri.toString(),
+          mimeType: 'application/json',
+          text: JSON.stringify({
+            channelId,
+            subscribed,
+            connected: bridge?.isConnected() ?? false,
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
+  // ── Item D: stream per-channel recent / latest message resources ──────
+
+  server.registerResource(
+    'channel-messages-recent',
+    new ResourceTemplate('stream://{channelId}/messages/recent', { list: undefined }),
+    {
+      description: 'Last 50 messages in a channel. Read this resource to review recent chat history without calling read_history tool.',
+      mimeType: 'application/json',
+    },
+    async (uri, variables) => {
+      const channelId = variables['channelId'] as string;
+      if (!callerJwt) {
+        return {
+          contents: [{
+            uri: uri.toString(),
+            mimeType: 'application/json',
+            text: JSON.stringify({
+              channelId,
+              note: 'Not authenticated. Call authenticate first, then use the read_history tool to retrieve messages.',
+            }, null, 2),
+          }],
+        };
+      }
+      const buffered = bridge ? bridge.getBufferedMessages(channelId) : [];
+      if (buffered.length > 0) {
+        return {
+          contents: [{
+            uri: uri.toString(),
+            mimeType: 'application/json',
+            text: JSON.stringify({ messages: buffered, source: 'buffer' }, null, 2),
+          }],
+        };
+      }
+      const result = await readHistory(channelId, 50, undefined, callerJwt);
+      return {
+        contents: [{
+          uri: uri.toString(),
+          mimeType: 'application/json',
+          text: JSON.stringify(result, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.registerResource(
+    'channel-messages-latest',
+    new ResourceTemplate('stream://{channelId}/messages/latest', { list: undefined }),
+    {
+      description: 'The single most recent message in a channel.',
+      mimeType: 'application/json',
+    },
+    async (uri, variables) => {
+      const channelId = variables['channelId'] as string;
+      if (!callerJwt) {
+        return {
+          contents: [{
+            uri: uri.toString(),
+            mimeType: 'application/json',
+            text: JSON.stringify({
+              channelId,
+              note: 'Not authenticated. Call authenticate first, then use the read_history tool to retrieve messages.',
+            }, null, 2),
+          }],
+        };
+      }
+      const result = await readHistory(channelId, 1, undefined, callerJwt) as { messages?: any[] };
+      const latest = result?.messages?.[0] ?? null;
+      return {
+        contents: [{
+          uri: uri.toString(),
+          mimeType: 'application/json',
+          text: JSON.stringify({ channelId, message: latest }, null, 2),
+        }],
+      };
+    }
+  );
 
   if (options.transport === 'stdio') {
     // For stdio, read AGENT_TOKEN from env and auto-authenticate

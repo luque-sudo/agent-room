@@ -28,8 +28,12 @@ export async function getContext(channelId: string, limit: number, jwt: string) 
   });
 
   if (!res.ok) {
-    const err = (await res.json()) as any;
-    throw new Error(err.error ?? 'Failed to fetch context');
+    let errorMsg = `HTTP ${res.status}: ${res.statusText}`;
+    try {
+      const err = await res.json() as { error?: string };
+      if (err.error) errorMsg = err.error;
+    } catch {}
+    throw new Error(errorMsg);
   }
 
   return res.json();

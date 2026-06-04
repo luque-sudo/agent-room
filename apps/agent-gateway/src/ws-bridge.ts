@@ -8,10 +8,15 @@ export class WsBridge {
   private ws: WebSocket | null = null;
   private channelHandlers = new Map<string, Set<MessageHandler>>();
   private signalHandlers = new Set<MessageHandler>();
-  private pendingActions = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void }>();
+  private anyMessageHandlers = new Set<MessageHandler>();
+  private pendingActions = new Map<string, Array<{ resolve: (v: any) => void; reject: (e: any) => void; sentAt: number }>>();
+  private latencySamples: number[] = [];
   private connected = false;
   private reconnectAttempts = 0;
   private readonly maxReconnects = 10;
+  private messageBuffer: Map<string, WireMessage[]> = new Map();
+  private readonly MESSAGE_BUFFER_MAX = 50;
+  private reconnectToken: string | null = null;
 
   constructor(
     private wsUrl: string,
@@ -26,6 +31,9 @@ export class WsBridge {
       this.ws.once('open', () => {
         this.connected = true;
         this.reconnectAttempts = 0;
+        if (this.reconnectToken) {
+          this.ws!.send(JSON.stringify({ type: 'action', payload: { action: 'reconnect', reconnectToken: this.reconnectToken } }));
+        }
         resolve();
       });
 
@@ -56,10 +64,28 @@ export class WsBridge {
     if (msg.type === 'response') {
       const payload = msg.payload as any;
       const action = payload?.action as string;
+
+      // Handle auth success — extract and store reconnect token
+      if (action === 'auth' && payload?.success === true) {
+        this.reconnectToken = payload.reconnectToken ?? null;
+      }
+
+      // Handle reconnect response
+      if (action === 'reconnect') {
+        if (payload?.success === true) {
+          this.reconnectToken = payload.reconnectToken ?? this.reconnectToken;
+        } else {
+          console.warn('[WsBridge] Reconnect token rejected by server — clearing stored token');
+          this.reconnectToken = null;
+        }
+      }
+
       if (action) {
-        const pending = this.pendingActions.get(action);
-        if (pending) {
-          this.pendingActions.delete(action);
+        const queue = this.pendingActions.get(action);
+        if (queue && queue.length > 0) {
+          const pending = queue.shift()!;
+          if (queue.length === 0) this.pendingActions.delete(action);
+          this.recordLatency(Date.now() - pending.sentAt);
           if (payload.success) {
             pending.resolve(payload);
           } else {
@@ -78,10 +104,33 @@ export class WsBridge {
       }
     }
 
+    // Buffer incoming chat messages per channel (sliding window, max 50)
+    if (msg.type === 'chat' && msg.channel) {
+      this.bufferMessage(msg.channel, msg);
+    }
+
+    // Broadcast to any-message listeners
+    for (const h of this.anyMessageHandlers) h(msg);
+
     // Route to signal handlers (mention, interrupt, etc.)
     if (msg.type === 'mention' || msg.type === 'signal') {
       for (const h of this.signalHandlers) h(msg);
     }
+  }
+
+  private bufferMessage(channelId: string, msg: WireMessage): void {
+    if (!this.messageBuffer.has(channelId)) {
+      this.messageBuffer.set(channelId, []);
+    }
+    const buf = this.messageBuffer.get(channelId)!;
+    buf.push(msg);
+    if (buf.length > this.MESSAGE_BUFFER_MAX) {
+      buf.shift(); // drop oldest
+    }
+  }
+
+  getBufferedMessages(channelId: string): WireMessage[] {
+    return [...(this.messageBuffer.get(channelId) ?? [])];
   }
 
   private send(msg: unknown): void {
@@ -94,11 +143,18 @@ export class WsBridge {
     return new Promise((resolve, reject) => {
       const id = randomUUID().slice(0, 8);
       const key = `${action}_${id}`;
-      this.pendingActions.set(action, { resolve, reject });
+      const sentAt = Date.now();
+      if (!this.pendingActions.has(action)) this.pendingActions.set(action, []);
+      this.pendingActions.get(action)!.push({ resolve, reject, sentAt });
       setTimeout(() => {
-        if (this.pendingActions.has(action)) {
-          this.pendingActions.delete(action);
-          reject(new Error(`Action "${action}" timed out`));
+        const queue = this.pendingActions.get(action);
+        if (queue) {
+          const idx = queue.findIndex(p => p.resolve === resolve);
+          if (idx >= 0) {
+            queue.splice(idx, 1);
+            if (queue.length === 0) this.pendingActions.delete(action);
+            reject(new Error(`Action "${action}" timed out`));
+          }
         }
       }, 10_000);
       this.send({ id, type: 'action', from: 'gateway', payload: { action, ...payload }, ts: new Date().toISOString() });
@@ -111,6 +167,7 @@ export class WsBridge {
 
   async leaveChannel(channelId: string): Promise<void> {
     await this.action('leave', { channelId });
+    this.messageBuffer.delete(channelId);
   }
 
   async listChannels(): Promise<any[]> {
@@ -124,11 +181,17 @@ export class WsBridge {
   }
 
   sendChat(channelId: string, content: string, mentions?: string[], replyTo?: string): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected — message not sent');
+    }
     const id = randomUUID().slice(0, 8);
     this.send({ id, type: 'chat', from: 'gateway', channel: channelId, payload: { content, mentions, replyTo }, ts: new Date().toISOString() });
   }
 
-  async startStream(channelId: string, streamId: string): Promise<void> {
+  startStream(channelId: string, streamId: string): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected — cannot start stream');
+    }
     const id = randomUUID().slice(0, 8);
     this.send({ id, type: 'stream_start', from: 'gateway', channel: channelId, payload: { streamId }, ts: new Date().toISOString() });
   }
@@ -159,11 +222,39 @@ export class WsBridge {
     return () => this.signalHandlers.delete(handler);
   }
 
+  onAnyMessage(handler: MessageHandler): () => void {
+    this.anyMessageHandlers.add(handler);
+    return () => this.anyMessageHandlers.delete(handler);
+  }
+
+  isConnected(): boolean {
+    return this.connected;
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnects) return;
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30_000);
     this.reconnectAttempts++;
     setTimeout(() => void this.connect().catch(() => {}), delay);
+  }
+
+  recordLatency(ms: number): void {
+    if (this.latencySamples.length >= 500) {
+      this.latencySamples.shift();
+    }
+    this.latencySamples.push(ms);
+  }
+
+  getLatencyPercentiles(): { p50: number | null; p95: number | null; p99: number | null; sampleCount: number } {
+    const count = this.latencySamples.length;
+    if (count < 5) {
+      return { p50: null, p95: null, p99: null, sampleCount: count };
+    }
+    const sorted = [...this.latencySamples].sort((a, b) => a - b);
+    const p50 = Math.round(sorted[Math.floor(sorted.length * 0.50)] * 10) / 10;
+    const p95 = Math.round(sorted[Math.floor(sorted.length * 0.95)] * 10) / 10;
+    const p99 = Math.round(sorted[Math.floor(sorted.length * 0.99)] * 10) / 10;
+    return { p50, p95, p99, sampleCount: count };
   }
 
   disconnect(): void {

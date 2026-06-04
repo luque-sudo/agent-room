@@ -19,7 +19,8 @@ import { createApiServer } from '../../api-server/src/create-server.js';
 import { createWsServer } from '../../ws-server/src/create-server.js';
 import { createAgentGateway } from '../../agent-gateway/src/create-server.js';
 
-const storage = new MemoryAdapter();
+const persistFile = process.env.PERSIST_FILE;
+const storage = new MemoryAdapter(persistFile);
 const pubsub = new LocalPubSub();
 
 const API_PORT = Number(process.env.API_PORT ?? 3000);
@@ -93,7 +94,7 @@ console.log(`
 │  WS gateway   →  ws://${localHost}:${WS_PORT}                │
 │  MCP gateway  →  http://${localHost}:${GW_PORT}  (HTTP/MCP)   │
 │                                                     │
-│  Storage: in-memory (MemoryAdapter)                 │
+${persistFile ? `│  Storage: MemoryAdapter  (persist → ${persistFile.slice(0,13).padEnd(13)}) │` : `│  Storage: in-memory (MemoryAdapter — ephemeral)      │`}
 │  PubSub:  in-process (LocalPubSub)                  │
 │                                                     │
 ${bootstrapToken

@@ -182,6 +182,9 @@ function buildPtyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 
   if (!out.PATH && typeof env.PATH === 'string') out.PATH = env.PATH;
   if (!out.HOME && typeof env.HOME === 'string') out.HOME = env.HOME;
+  if (!out.HOME && typeof (env as NodeJS.ProcessEnv).USERPROFILE === 'string') {
+    out.HOME = (env as NodeJS.ProcessEnv).USERPROFILE!;
+  }
   if (!out.SHELL && typeof env.SHELL === 'string') out.SHELL = env.SHELL;
   if (!out.TERM) out.TERM = 'xterm-256color';
   return out;
@@ -310,8 +313,24 @@ const queue: string[] = [];
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 async function resolveJwt(): Promise<string> {
-  // If it already looks like a JWT (base64url header), use it directly
-  if (AGENT_TOKEN.startsWith('eyJ')) return AGENT_TOKEN;
+  // If it already looks like a JWT (base64url header), validate expiry then use directly
+  if (AGENT_TOKEN.startsWith('eyJ')) {
+    try {
+      const parts = AGENT_TOKEN.split('.');
+      if (parts[1]) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')) as { exp?: number };
+        if (!payload.exp || payload.exp * 1000 > Date.now()) {
+          return AGENT_TOKEN; // valid or no expiry claim
+        }
+        process.stderr.write('[mention-watcher] JWT expired — re-exchanging via API\n');
+        // fall through to API exchange below
+      } else {
+        return AGENT_TOKEN;
+      }
+    } catch {
+      return AGENT_TOKEN; // malformed payload — use as-is
+    }
+  }
 
   // Otherwise exchange via api-server /auth/agent-token
   const res = await fetch(`${API_URL}/auth/agent-token`, {
@@ -481,7 +500,15 @@ async function main() {
   let proc: TerminalProcess;
   try {
     const p = pty.spawn(COMMAND, CMD_ARGS, spawnOptions);
-    proc = { ...p, mode: 'pty' };
+    // Wrap explicitly — spread omits prototype methods (onData, onExit, write, resize, kill)
+    proc = {
+      mode: 'pty',
+      write: (data: string) => p.write(data),
+      onData: (cb: (data: string) => void) => p.onData(cb),
+      onExit: (cb: ({ exitCode }: { exitCode: number }) => void) => p.onExit(cb),
+      resize: (cols: number, rows: number) => p.resize(cols, rows),
+      kill: (signal?: string) => p.kill(signal),
+    };
   } catch (err: any) {
     const msg = String(err?.message ?? err);
     if (!msg.includes('posix_spawnp failed')) {
@@ -491,7 +518,10 @@ async function main() {
     }
 
     // Fallback: spawn via the user's shell when direct posix_spawnp lookup fails.
-    const userShell = process.env.SHELL || '/bin/zsh';
+    const userShell = process.env.SHELL
+      ?? (process.platform === 'win32'
+        ? (process.env.COMSPEC ?? 'cmd.exe')
+        : '/bin/bash');
     const quotedArgs = [COMMAND, ...CMD_ARGS]
       .map((a) => `'${a.replace(/'/g, "'\\''")}'`)
       .join(' ');
@@ -508,7 +538,13 @@ async function main() {
       process.stderr.write(`[mention-watcher] Shell fallback failed: ${shellMsg}\n`);
       process.stderr.write('[mention-watcher] Falling back to script PTY mode\n');
       try {
-        proc = spawnViaScriptPty(COMMAND, CMD_ARGS, WORKSPACE_DIR, ptyEnv);
+        if (process.platform === 'win32') {
+          // node-pty handles PTY natively on Windows; skip the Unix `script` wrapper
+          process.stderr.write('[mention-watcher] Windows: skipping script wrapper, using plain mode\n');
+          proc = spawnWithoutPty(COMMAND, CMD_ARGS, WORKSPACE_DIR, ptyEnv);
+        } else {
+          proc = spawnViaScriptPty(COMMAND, CMD_ARGS, WORKSPACE_DIR, ptyEnv);
+        }
       } catch (scriptErr: any) {
         const scriptMsg = String(scriptErr?.message ?? scriptErr);
         process.stderr.write(`[mention-watcher] Script PTY fallback failed: ${scriptMsg}\n`);

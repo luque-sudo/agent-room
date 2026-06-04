@@ -7,15 +7,15 @@ export async function entityRoutes(
 ) {
   const { storage } = opts;
 
-  app.get('/:id', {
+  app.get('/', {
     preHandler: [app.authenticate],
-    handler: async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const entity = await storage.findEntityById(id);
-      if (!entity) return reply.code(404).send({ error: 'Entity not found' });
-
-      const { email: _email, ...publicProfile } = entity as any;
-      return reply.send({ entity: publicProfile });
+    handler: async (_req, reply) => {
+      const allEntities = await storage.listEntities();
+      const entities = allEntities.map((entity) => {
+        const { email: _email, ...publicProfile } = entity as any;
+        return publicProfile;
+      });
+      return reply.send({ entities });
     },
   });
 
@@ -26,6 +26,18 @@ export async function entityRoutes(
       const entity = await storage.findEntityById(caller.sub);
       if (!entity) return reply.code(404).send({ error: 'Entity not found' });
       return reply.send({ entity });
+    },
+  });
+
+  app.get('/:id', {
+    preHandler: [app.authenticate],
+    handler: async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const entity = await storage.findEntityById(id);
+      if (!entity) return reply.code(404).send({ error: 'Entity not found' });
+
+      const { email: _email, ...publicProfile } = entity as any;
+      return reply.send({ entity: publicProfile });
     },
   });
 }

@@ -1,0 +1,128 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Dark theme (default) ───────────────────────────────────────────── */
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface-2: #22263a;
+  --border: #2d3148;
+  --accent: #6c8fff;
+  --accent-dim: #3d5adb22;
+  --text: #e8eaf6;
+  --text-muted: #7b82a8;
+  --danger: #ff5c5c;
+  --success: #4ade80;
+  --radius: 10px;
+  --font: 'Inter', system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+/* ── Light theme ────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f4f5fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f8;
+  --border: #d4d8f0;
+  --accent: #4a6cf7;
+  --accent-dim: #4a6cf714;
+  --text: #1a1d2e;
+  --text-muted: #6870a0;
+  --danger: #e53e3e;
+  --success: #38a169;
+  color-scheme: light;
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  height: 100dvh;
+  overflow: hidden;
+  transition: background 0.2s, color 0.2s;
+}
+
+input, button, textarea, select {
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+button { cursor: pointer; }
+a { color: var(--accent); text-decoration: none; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+/* ── Keyframes ───────────────────────────────────────────────────── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(8px) scale(0.96); }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────── */
+.animate-fadeSlideUp  { animation: fadeSlideUp  0.18s ease both; }
+.animate-fadeIn       { animation: fadeIn       0.15s ease both; }
+.animate-slideInLeft  { animation: slideInLeft  0.18s ease both; }
+.animate-slideInRight { animation: slideInRight 0.18s ease both; }
+.animate-spin         { animation: spin 1s linear infinite; }
+.animate-pulse        { animation: pulse 1.5s ease infinite; }
+.animate-toastIn      { animation: toastIn  0.22s cubic-bezier(0.34,1.56,0.64,1) both; }
+.animate-toastOut     { animation: toastOut 0.18s ease forwards; }
+
+/* ── Skeleton shimmer ────────────────────────────────────────────── */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 6px;
+}
+
+/* ── Hover transition helper ─────────────────────────────────────── */
+.hover-surface:hover { background: var(--surface-2) !important; }
+.hover-accent:hover  { color: var(--accent) !important; }
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  body { overflow: hidden; }
+}

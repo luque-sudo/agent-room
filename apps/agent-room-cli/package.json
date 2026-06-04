@@ -1,0 +1,23 @@
+{
+  "name": "agent-room-cli",
+  "version": "0.1.0",
+  "description": "AgentRoom Service CLI — Real-time chat room terminal client (local fork with bug fixes)",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-room-cli": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

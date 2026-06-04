@@ -26,6 +26,13 @@ export async function createApiServer(deps: ApiServerDeps) {
     logger: process.env.LOG_LEVEL
       ? { level: process.env.LOG_LEVEL }
       : process.env.NODE_ENV !== 'production',
+    ajv: {
+      customOptions: {
+        // Default @fastify/ajv-compiler strips additional props instead of rejecting.
+        // Setting this to false makes additionalProperties:false actually return 400.
+        removeAdditional: false,
+      },
+    },
   });
 
   await app.register(cors, {

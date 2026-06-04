@@ -1,0 +1,26 @@
+{
+  "name": "@agent-chat/dev-server",
+  "version": "0.1.0",
+  "description": "All-in-one local dev server with shared in-memory adapters",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent-chat/agent-gateway": "workspace:*",
+    "@agent-chat/api-server": "workspace:*",
+    "@agent-chat/database": "workspace:*",
+    "@agent-chat/types": "workspace:*",
+    "@agent-chat/ws-server": "workspace:*",
+    "bcryptjs": "^3.0.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

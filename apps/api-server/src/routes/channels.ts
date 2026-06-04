@@ -18,6 +18,20 @@ export async function channelRoutes(
   });
 
   app.post('/', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['DM', 'GROUP', 'CHANNEL'] },
+          name: { type: 'string' },
+          description: { type: 'string' },
+          isPublic: { type: 'boolean' },
+          persistent: { type: 'boolean' },
+        },
+        required: ['type'],
+        additionalProperties: false,
+      },
+    },
     preHandler: [app.authenticate],
     handler: async (req, reply) => {
       const caller = (req as any).tokenPayload;
@@ -60,12 +74,30 @@ export async function channelRoutes(
         return reply.code(403).send({ error: 'Not a member of this channel' });
       }
 
-      const members = await storage.listMembers(id);
+      const rawMembers = await storage.listMembers(id);
+      const members = await Promise.all(
+        rawMembers.map(async (m) => {
+          const entity = await storage.findEntityById(m.entityId);
+          return { ...m, entityName: entity?.name ?? m.entityId };
+        })
+      );
       return reply.send({ channel, members });
     },
   });
 
   app.post('/:id/members', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          entityId: { type: 'string' },
+          role: { type: 'string' },
+          isSilent: { type: 'boolean' },
+        },
+        required: ['entityId'],
+        additionalProperties: false,
+      },
+    },
     preHandler: [app.authenticate],
     handler: async (req, reply) => {
       const caller = (req as any).tokenPayload;
@@ -79,15 +111,23 @@ export async function channelRoutes(
       const channel = await storage.findChannelById(id);
       if (!channel) return reply.code(404).send({ error: 'Channel not found' });
 
-      const callerMember = await storage.findMember(id, caller.sub);
-      if (!callerMember || ![EntityRole.OWNER, EntityRole.ADMIN].includes(callerMember.role)) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+      const isSelfJoin = entityId === caller.sub;
+      if (!(isSelfJoin && channel.isPublic)) {
+        const callerMember = await storage.findMember(id, caller.sub);
+        if (!callerMember || ![EntityRole.OWNER, EntityRole.ADMIN].includes(callerMember.role)) {
+          return reply.code(403).send({ error: 'Insufficient permissions' });
+        }
       }
 
       const target = await storage.findEntityById(entityId);
       if (!target) return reply.code(404).send({ error: 'Entity not found' });
 
-      await storage.addMember(id, entityId, role ?? EntityRole.MEMBER, isSilent ?? false);
+      const VALID_ROLES = Object.values(EntityRole);
+      const lowered = role?.toLowerCase();
+      const normalizedRole = (lowered && VALID_ROLES.includes(lowered as EntityRole))
+        ? (lowered as EntityRole)
+        : EntityRole.MEMBER;
+      await storage.addMember(id, entityId, normalizedRole, isSilent ?? false);
 
       return reply.code(201).send({ message: 'Member added' });
     },
@@ -105,17 +145,32 @@ export async function channelRoutes(
         return reply.code(403).send({ error: 'Insufficient permissions' });
       }
 
-      await storage.updateMemberRole(id, entityId, role);
+      const VALID_ROLES = Object.values(EntityRole);
+      const lowered = role?.toLowerCase();
+      if (!lowered || !VALID_ROLES.includes(lowered as EntityRole)) {
+        return reply.code(400).send({ error: `Invalid role. Valid values: ${VALID_ROLES.join(', ')}` });
+      }
+      await storage.updateMemberRole(id, entityId, lowered as EntityRole);
       return reply.send({ message: 'Role updated' });
     },
   });
 
   app.get('/:id/messages', {
     preHandler: [app.authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 200 },
+        },
+        additionalProperties: false,
+      },
+    },
     handler: async (req, reply) => {
       const caller = (req as any).tokenPayload;
       const { id } = req.params as { id: string };
-      const { cursor, limit } = req.query as { cursor?: string; limit?: string };
+      const { cursor, limit } = req.query as { cursor?: string; limit?: number };
 
       const channel = await storage.findChannelById(id);
       if (!channel) return reply.code(404).send({ error: 'Channel not found' });
@@ -125,8 +180,10 @@ export async function channelRoutes(
         return reply.code(403).send({ error: 'Not a member of this channel' });
       }
 
-      const messages = await storage.listMessages(id, cursor, limit ? Number(limit) : 50);
-      return reply.send({ messages, count: messages.length });
+      const messages = await storage.listMessages(id, cursor, limit ?? 50);
+      // nextCursor = oldest message in this page; pass it as ?cursor= to get the previous page
+      const nextCursor = messages.length > 0 ? messages[0].id : null;
+      return reply.send({ messages, count: messages.length, nextCursor });
     },
   });
 
@@ -171,7 +228,7 @@ export async function channelRoutes(
     },
   });
 
-  app.post('/:id/export', {
+  app.get('/:id/export', {
     preHandler: [app.authenticate],
     handler: async (req, reply) => {
       const caller = (req as any).tokenPayload;

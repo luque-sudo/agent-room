@@ -1,0 +1,11 @@
+{
+  "id": "ac1ab2a3-248d-483d-92cf-82d784ba9515",
+  "ok": false,
+  "error": {
+    "code": "browser_error",
+    "message": "Evaluation error: SyntaxError: Unexpected token ','"
+  },
+  "_meta": {
+    "runtimeId": "02fc42d9-c6f0-47de-90e1-ebd8889d725f"
+  }
+}

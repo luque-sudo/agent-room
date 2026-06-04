@@ -21,6 +21,7 @@ interface ConnectionInfo {
   scopes: string[];
   ws: WebSocket;
   channels: Set<string>;
+  channelUnsubs: Map<string, () => void>;
   streamSessions: Map<string, { chunkIndex: number }>;
 }
 
@@ -45,6 +46,12 @@ export class WsGateway {
   private channelConns = new Map<string, Set<string>>();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private unsubscribers: Array<() => void> = [];
+  private reconnectTokens = new Map<string, {
+    entityId: string;
+    entityName: string;
+    channels: string[];
+    expiresAt: number;
+  }>();
 
   constructor(
     private storage: IStorageAdapter,
@@ -52,6 +59,14 @@ export class WsGateway {
   ) {
     this.wss = new WebSocketServer({ noServer: true });
     this.setupHeartbeat();
+    setInterval(() => this.pruneReconnectTokens(), 5 * 60 * 1000);
+  }
+
+  private pruneReconnectTokens(): void {
+    const now = Date.now();
+    for (const [token, data] of this.reconnectTokens) {
+      if (data.expiresAt < now) this.reconnectTokens.delete(token);
+    }
   }
 
   handleUpgrade(req: IncomingMessage, socket: any, head: Buffer): void {
@@ -92,6 +107,7 @@ export class WsGateway {
       scopes: payload.scopes,
       ws,
       channels: new Set(),
+      channelUnsubs: new Map(),
       streamSessions: new Map(),
     };
     this.connections.set(connId, conn);
@@ -106,12 +122,21 @@ export class WsGateway {
     });
     this.unsubscribers.push(unsub);
 
+    const reconnectToken = randomUUID();
+    this.reconnectTokens.set(reconnectToken, {
+      entityId: payload.sub,
+      entityName: payload.name,
+      channels: [],
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    });
+
     send(ws, makeWire('response', 'system', {
       action: 'connect',
       success: true,
       connectionId: connId,
       entityId: payload.sub,
       entityName: payload.name,
+      reconnectToken,
     }));
 
     ws.on('message', (data) => {
@@ -202,26 +227,40 @@ export class WsGateway {
           member = await this.storage.findMember(channelId, conn.entityId);
         }
 
+        const alreadySubscribed = conn.channels.has(channelId);
         conn.channels.add(channelId);
         if (!this.channelConns.has(channelId)) this.channelConns.set(channelId, new Set());
         this.channelConns.get(channelId)!.add(conn.id);
 
-        // Subscribe to channel pub/sub
-        const unsub = this.pubsub.subscribe(Topics.channel(channelId), (wireMsg) => {
-          if (conn.channels.has(channelId)) {
-            send(conn.ws, wireMsg as WireMessage);
-          }
-        });
-        this.unsubscribers.push(unsub);
+        // Subscribe to channel pub/sub only once per connection per channel
+        if (!alreadySubscribed) {
+          const unsub = this.pubsub.subscribe(Topics.channel(channelId), (wireMsg) => {
+            if (conn.channels.has(channelId)) {
+              send(conn.ws, wireMsg as WireMessage);
+            }
+          });
+          conn.channelUnsubs.set(channelId, unsub);
+          this.unsubscribers.push(unsub);
+        }
 
-        // Notify channel members of join
-        const systemMsg = makeWire('signal', 'system', {
-          event: 'join',
-          entityId: conn.entityId,
-          entityName: conn.entityName,
-          channelId,
-        }, channelId);
-        await this.pubsub.publish(Topics.channel(channelId), systemMsg);
+        // Notify channel members of join — only on first subscription, not on re-join
+        if (!alreadySubscribed) {
+          const systemMsg = makeWire('signal', 'system', {
+            event: 'join',
+            entityId: conn.entityId,
+            entityName: conn.entityName,
+            channelId,
+          }, channelId);
+          await this.pubsub.publish(Topics.channel(channelId), systemMsg);
+        }
+
+        // Sync reconnect token channel list
+        for (const [, data] of this.reconnectTokens) {
+          if (data.entityId === conn.entityId) {
+            data.channels = [...conn.channels];
+            break;
+          }
+        }
 
         send(conn.ws, makeWire('response', 'system', {
           action,
@@ -237,8 +276,21 @@ export class WsGateway {
         const channelId = payload.channelId as string;
         if (!channelId) return;
 
+        const channelUnsub = conn.channelUnsubs.get(channelId);
+        if (channelUnsub) {
+          channelUnsub();
+          conn.channelUnsubs.delete(channelId);
+        }
         conn.channels.delete(channelId);
         this.channelConns.get(channelId)?.delete(conn.id);
+
+        // Sync reconnect token channel list
+        for (const [, data] of this.reconnectTokens) {
+          if (data.entityId === conn.entityId) {
+            data.channels = [...conn.channels];
+            break;
+          }
+        }
 
         const systemMsg = makeWire('signal', 'system', {
           event: 'leave',
@@ -268,6 +320,67 @@ export class WsGateway {
           })
         );
         send(conn.ws, makeWire('response', 'system', { action, success: true, members: enriched }));
+        break;
+      }
+
+      case 'reconnect': {
+        if (!payload || typeof payload !== 'object') {
+          send(conn.ws, makeWire('response', 'system', { action: 'reconnect', success: false, error: 'Invalid payload' }));
+          return;
+        }
+        const { reconnectToken } = payload as { reconnectToken: string };
+        if (!reconnectToken) {
+          send(conn.ws, makeWire('response', 'system', { action: 'reconnect', success: false, error: 'Missing reconnectToken' }));
+          return;
+        }
+        const stored = this.reconnectTokens.get(reconnectToken);
+        if (!stored || stored.expiresAt < Date.now()) {
+          this.reconnectTokens.delete(reconnectToken);
+          send(conn.ws, makeWire('response', 'system', { action: 'reconnect', success: false, error: 'Token expired or invalid' }));
+          return;
+        }
+
+        // Invalidate the used token immediately (prevents replay attacks)
+        this.reconnectTokens.delete(reconnectToken);
+
+        // Restore entity context
+        conn.entityId = stored.entityId;
+        conn.entityName = stored.entityName;
+
+        // Re-join only channels where membership is still valid
+        for (const channelId of stored.channels) {
+          const member = await this.storage.findMember(channelId, stored.entityId);
+          if (!member) continue; // membership was revoked while disconnected
+          conn.channels.add(channelId);
+          if (!this.channelConns.has(channelId)) this.channelConns.set(channelId, new Set());
+          this.channelConns.get(channelId)!.add(conn.id);
+          if (!conn.channelUnsubs.has(channelId)) {
+            const unsub = this.pubsub.subscribe(Topics.channel(channelId), (wireMsg) => {
+              if (conn.channels.has(channelId)) send(conn.ws, wireMsg as WireMessage);
+            });
+            conn.channelUnsubs.set(channelId, unsub);
+            this.unsubscribers.push(unsub);
+          }
+        }
+
+        // Issue a fresh token (rotate — old token already deleted above)
+        const { randomUUID } = await import('node:crypto');
+        const newReconnectToken = randomUUID();
+        this.reconnectTokens.set(newReconnectToken, {
+          entityId: stored.entityId,
+          entityName: stored.entityName,
+          channels: [...conn.channels],
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+        });
+
+        send(conn.ws, makeWire('response', 'system', {
+          action: 'reconnect',
+          success: true,
+          entityId: conn.entityId,
+          entityName: conn.entityName,
+          restoredChannels: [...conn.channels],
+          reconnectToken: newReconnectToken,
+        }));
         break;
       }
 
@@ -471,7 +584,7 @@ export class WsGateway {
       for (const conn of this.connections.values()) {
         if ((conn.ws as any)._isAlive === false) {
           conn.ws.terminate();
-          return;
+          continue;
         }
         (conn.ws as any)._isAlive = false;
         conn.ws.ping();

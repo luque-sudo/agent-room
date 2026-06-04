@@ -72,14 +72,11 @@ export async function agentRoutes(
       if (!caller.scopes.includes('admin')) {
         return reply.code(403).send({ error: 'admin scope required' });
       }
-      const channels = await storage.listChannels();
-      const all = await Promise.all(
-        channels.map(async (c) => {
-          const members = await storage.listMembers(c.id);
-          return { ...c, memberCount: members.length };
-        })
-      );
-      return reply.send({ agents: all });
+      const all = await storage.listEntities();
+      const agents = all
+        .filter((e) => e.type === EntityType.AGENT)
+        .map(({ email: _email, ...pub }) => pub);
+      return reply.send({ agents });
     },
   });
 }

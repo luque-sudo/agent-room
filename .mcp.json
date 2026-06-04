@@ -2,15 +2,16 @@
   "mcpServers": {
     "agent-chat": {
       "type": "stdio",
-      "command": "/Users/shangui/Desktop/project/litenmcp/node_modules/.bin/tsx",
+      "command": "C:\\Users\\ricar\\Desk\\Orca\\agentroom\\node_modules\\.bin\\tsx.cmd",
       "args": [
-        "/Users/shangui/Desktop/project/litenmcp/apps/agent-gateway/src/index.ts"
+        "C:\\Users\\ricar\\Desk\\Orca\\agentroom\\apps\\agent-gateway\\src\\index.ts"
       ],
       "env": {
-        "AGENT_TOKEN": "d4873d0e-66ae-40e9-9256-d8630d185a04",
+        "AGENT_TOKEN": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI5NjUyMzAzZS0yZmRiLTQzMDctYTQ4ZC01MzI1OTkyZDJiNTciLCJ0eXBlIjoiQUdFTlQiLCJuYW1lIjoiY2xhdWRlLWFnZW50Iiwic2NvcGVzIjpbImNoYXQiLCJzdHJlYW0iLCJvYnNlcnZlIl0sImp0aSI6ImUxNzVhZGI5LWRkZGEtNDQyOS1hZmYwLTg3Y2NkNjEwZTU5YiIsImlhdCI6MTc4MDUyNzUwN30.uYUrLt9A9zoTkvfnrMGj_2bfsa2Zn7za8KjlWIiZMPw",
         "WS_SERVER_URL": "ws://localhost:3001",
         "API_SERVER_URL": "http://localhost:3000",
-        "TRANSPORT": "stdio"
+        "TRANSPORT": "stdio",
+        "BOOTSTRAP_AGENT_TOKEN": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI5NjUyMzAzZS0yZmRiLTQzMDctYTQ4ZC01MzI1OTkyZDJiNTciLCJ0eXBlIjoiQUdFTlQiLCJuYW1lIjoiY2xhdWRlLWFnZW50Iiwic2NvcGVzIjpbImNoYXQiLCJzdHJlYW0iLCJvYnNlcnZlIl0sImp0aSI6ImUxNzVhZGI5LWRkZGEtNDQyOS1hZmYwLTg3Y2NkNjEwZTU5YiIsImlhdCI6MTc4MDUyNzUwN30.uYUrLt9A9zoTkvfnrMGj_2bfsa2Zn7za8KjlWIiZMPw"
       }
     }
   }

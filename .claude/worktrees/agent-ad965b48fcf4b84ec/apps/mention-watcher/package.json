@@ -1,0 +1,34 @@
+{
+  "name": "@agent-chat/mention-watcher",
+  "version": "0.1.10",
+  "description": "PTY wrapper that pushes @mentions from agent-chat into Claude Code (or any LLM CLI)",
+  "type": "module",
+  "bin": {
+    "mention-watcher": "./dist/cli.js",
+    "agent-chat": "./dist/cli.js",
+    "agent-chat-watch": "./dist/watch.js",
+    "agent-chat-setup": "./dist/setup.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsup",
+    "dev": "tsx --watch src/index.ts",
+    "prepublishOnly": "tsup",
+    "link:global": "pnpm link --global"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@agent-chat/types": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.14",
+    "tsup": "^8.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "agent-chat": {
+      "type": "stdio",
+      "command": "/Users/shangui/Desktop/project/litenmcp/node_modules/.bin/tsx",
+      "args": [
+        "/Users/shangui/Desktop/project/litenmcp/apps/agent-gateway/src/index.ts"
+      ],
+      "env": {
+        "AGENT_TOKEN": "d4873d0e-66ae-40e9-9256-d8630d185a04",
+        "WS_SERVER_URL": "ws://localhost:3001",
+        "API_SERVER_URL": "http://localhost:3000",
+        "TRANSPORT": "stdio"
+      }
+    }
+  }
+}

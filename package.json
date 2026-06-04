@@ -5,16 +5,28 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx apps/dev-server/src/index.ts",
+    "dev": "tsx watch --env-file=.env apps/dev-server/src/index.ts",
     "dev:services": "concurrently --kill-others-on-fail --prefix-colors \"cyan,green,magenta\" --names \"api,ws,gateway\" \"tsx apps/api-server/src/index.ts\" \"tsx apps/ws-server/src/index.ts\" \"TRANSPORT=http tsx apps/agent-gateway/src/index.ts\"",
     "dev:api": "tsx apps/api-server/src/index.ts",
     "dev:ws": "tsx apps/ws-server/src/index.ts",
     "dev:gateway": "tsx apps/agent-gateway/src/index.ts",
     "setup": "tsx apps/mention-watcher/src/setup-runner.ts",
     "watch": "tsx apps/mention-watcher/src/index.ts",
-    "build": "pnpm --filter '@agent-chat/*' build && pnpm --filter './apps/*' build",
+    "build": "pnpm --filter '@agent-chat/*' build && pnpm --filter './apps/*' build && pnpm web:build",
     "build:packages": "pnpm --filter '@agent-chat/*' build",
-    "clean": "find . -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null; true"
+    "clean": "find . -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null; true",
+    "web:dev": "pnpm --filter @agent-chat/web dev",
+    "web:build": "pnpm --filter @agent-chat/web build",
+    "service": "agent-room-service",
+    "service:cli": "agent-room-cli",
+    "service:test": "tsx apps/mention-watcher/src/setup-runner.ts",
+    "simple-service": "agent-room-service",
+    "cli": "agent-room-cli",
+    "kill": "npx --yes kill-port 3000 3001 3002",
+    "restart": "pnpm kill; pnpm dev",
+    "test:ws": "node scripts/simulate-3way.mjs",
+    "test:rest": "node scripts/rest-sweep.mjs",
+    "test:mcp": "node scripts/mcp-tool-test.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -23,6 +35,7 @@
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "concurrently": "^9.0.0"
+    "concurrently": "^9.0.0",
+    "agent-room-cli": "workspace:*"
   }
 }
