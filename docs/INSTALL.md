@@ -20,7 +20,7 @@ pnpm install
 
 ### 2. Copy environment file
 ```powershell
-copy .env.example .env
+copy docs/.env.example .env
 ```
 Edit `.env` if you want a custom `JWT_SECRET` (required before any shared or production use).
 
@@ -64,7 +64,7 @@ Web UI at `http://localhost:4000` — login with `admin@localhost` / `admin123`.
 
 ## Orca Integration Setup
 
-The `orca-integration/` folder connects AgentRoom to Orca ADE for multi-agent orchestration.
+The `.claude/orca-integration/` folder connects AgentRoom to Orca ADE for multi-agent orchestration.
 
 ### What's included
 
@@ -80,10 +80,10 @@ Requires: AgentRoom backend running + `AGENT_TOKEN` in `.env` (run `pnpm setup` 
 
 ```powershell
 # Spawn a worker agent in #general (uses your current terminal as orchestrator)
-& .\orca-integration\orca-bootstrap-agentroom.ps1 -OrchestratorHandle <your-handle>
+& .\.claude\orca-integration\orca-bootstrap-agentroom.ps1 -OrchestratorHandle <your-handle>
 
 # Spawn with specific model, channel, and role
-& .\orca-integration\orca-bootstrap-agentroom.ps1 `
+& .\.claude\orca-integration\orca-bootstrap-agentroom.ps1 `
   -OrchestratorHandle <your-handle> `
   -Model claude-haiku-4-5-20251001 `
   -Channel backend `
@@ -129,19 +129,19 @@ Wraps Claude Code CLI. `claude` must be in PATH. Requires `AGENT_TOKEN` in `.env
 
 ## Orca Skill (installed globally)
 
-The canonical Orca skills are installed at `~/.agents/skills/`:
+The canonical Orca skills are installed at `~/.claude/agents/skills/`:
 
 | Skill | Path | Contents |
 |-------|------|----------|
-| **orca-cli** | `~/.agents/skills/orca-cli/SKILL.md` | terminal, browser, worktree, automations — full command surface |
-| **orchestration** | `~/.agents/skills/orchestration/SKILL.md` | inter-agent messaging, task DAGs, dispatch with `--inject`, decision gates, coordinator loops |
+| **orca-cli** | `~/.claude/agents/skills/orca-cli/SKILL.md` | terminal, browser, worktree, automations — full command surface |
+| **orchestration** | `~/.claude/agents/skills/orchestration/SKILL.md` | inter-agent messaging, task DAGs, dispatch with `--inject`, decision gates, coordinator loops |
 
-A supplementary reference skill is also at `~/.claude/skills/orca-orchestration/` (parts: cli, orchestration, browser, error-recovery, portability).
+A supplementary reference skill is also at `~/.claude/agents/skills/orca-orchestration/` (parts: cli, orchestration, browser, error-recovery, portability).
 
 **Moving to a new machine — Orca-specific steps:**
 ```powershell
 # 1. Install Orca ADE (https://onorca.dev)
-# 2. Update the $ORCA path in orca-integration/orca-bootstrap-agentroom.ps1
+# 2. Update the $ORCA path in .claude/orca-integration/orca-bootstrap-agentroom.ps1
 #    to match the new machine username
 $ORCA = 'C:\Users\<new-username>\AppData\Local\Programs\Orca\bin\orca.cmd'
 # 3. Update WorkDir default in the same file
@@ -151,7 +151,7 @@ $ORCA = 'C:\Users\<new-username>\AppData\Local\Programs\Orca\bin\orca.cmd'
 
 Copy these files to the new machine (same paths):
 - `~/.claude/scripts/orca-bootstrap.ps1`
-- `~/.claude/skills/orca-orchestration/` (full directory)
+- `~/.claude/agents/skills/orca-orchestration/` (full directory)
 - `~/.claude/rules/common/orca-orchestration.md`
 
 ---

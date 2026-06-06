@@ -1,7 +1,6 @@
 packages:
   - 'packages/@agent-chat/*'
   - 'apps/*'
-  - 'web'
 allowBuilds:
   esbuild: true
   node-pty: true

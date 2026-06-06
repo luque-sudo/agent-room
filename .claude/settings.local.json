@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat -ano)",
+      "Bash(timeout 5 pnpm cli --name TestAgent --room general)",
+      "Read(//c/Users/ricar/.claude/skills/orca-orchestration/**)",
+      "Read(//c/Users/ricar/.agents/**)",
+      "Bash(git config *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "agent-chat"
+  ]
+}

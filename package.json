@@ -24,9 +24,9 @@
     "cli": "agent-room-cli",
     "kill": "npx --yes kill-port 3000 3001 3002",
     "restart": "pnpm kill; pnpm dev",
-    "test:ws": "node scripts/simulate-3way.mjs",
-    "test:rest": "node scripts/rest-sweep.mjs",
-    "test:mcp": "node scripts/mcp-tool-test.mjs"
+    "test:ws": "node .claude/scripts/simulate-3way.mjs",
+    "test:rest": "node .claude/scripts/rest-sweep.mjs",
+    "test:mcp": "node .claude/scripts/mcp-tool-test.mjs"
   },
   "engines": {
     "node": ">=18"
