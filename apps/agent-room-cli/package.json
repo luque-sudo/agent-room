@@ -8,6 +8,7 @@
     "agent-room-cli": "./dist/cli.js"
   },
   "scripts": {
+    "prepare": "tsc",
     "build": "tsc",
     "dev": "tsx src/cli.ts"
   },
